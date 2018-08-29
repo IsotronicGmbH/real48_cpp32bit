@@ -1,0 +1,210 @@
+                             BPREAL
+              Borland Pascal Real-Type Conversions
+                        by Richard Biffl
+
+
+     The accompanying module, BPREAL.C, contains functions in the
+C language to convert floating-point numbers between the IEEE
+"double" type used by most PC-based C compilers and the
+proprietary "real" type used by Borland Pascal.  The functions
+allow C programs to read numeric data stored by Borland Pascal
+programs, and to write numeric data in a format accessible to
+Borland Pascal programs.
+
+     Recent versions of Borland Pascal, beginning with Turbo
+Pascal 4.0, support the same IEEE-standard floating-point types
+used by C (and other) compilers, but the use of IEEE types in
+Borland Pascal is optional.  Many Pascal programmers continue to
+use Borland's default real type because programs that use it do
+not require a numeric coprocessor or coprocessor-emulation code.
+
+     Borland Pascal can automatically convert values between real
+and IEEE formats, but other languages do not have built-in
+support for the real type.  The appropriate IEEE type for real
+conversions is the 8-byte double-precision type, called double in
+both C and Borland Pascal, which can store any value that can be
+stored by a 6-byte real.  The real_to_double function in the
+BPREAL module performs this conversion, returning a C double.
+
+     BPREAL's double_to_real function performs the opposite
+conversion, from C double to Borland Pascal real.  The function
+can return an error code to indicate whether the original double
+value was accurately converted to the narrower real type.
+
+
+The Real and Double Formats
+
+     The real and double formats comprise three fields:  a sign
+bit, a significand field, and an exponent field.  For the real
+type, the fields can be visualized as arranged like this, with
+the most significant bit at the left end of each field:
+
+            Field:  Sign      Significand    Exponent
+     Width (bits):    1            39            8
+
+The fields of the IEEE double type are arranged like this:
+
+            Field:  Sign      Exponent       Significand
+     Width (bits):    1          11               52
+
+In a PC's memory, these values are stored with the right-most 8-
+bit bytes at the lowest address (or first on a disk), so that the
+real's exponent would be stored as the first byte and its sign
+bit would be the most significant (leftmost) bit of the sixth
+byte.
+
+     The sign bit is set when the value is less than 0.0
+(negative).  The exponent field (8 bits for real, 11 bits for
+double) represents the integer part of the base-2 logarithm of
+the value, indicating the value's absolute magnitude.  The
+exponent is biased by some value (129 for real, 1023 for double),
+so although the binary value of the field is positive, it can
+signify a negative value when the bias is subtracted from it. 
+The significand field (39 bits for real, 52 bits for double) is
+the fractional part by which the value indicated by the exponent
+is increased.  Thus, for both types, the represented value is
+generally
+
+
+    Sign           Significand              (Exponent - Bias)
+(-1)      *  (1 + -------------------)  *  2
+                    SignificandWidth
+                   2
+
+
+     There are a few special cases.  The value of a real is 0.0
+when the exponent field is 0, i.e., when no bit in the exponent
+field is set.  The IEEE double has a value of 0.0 when both the
+exponent field and the significand field have values of 0, but
+the double's sign bit can be set to represent -0.0 as well as
+0.0.  When all 11 bits are set in the double's exponent field, so
+that it has its highest possible value (2047), and none of the
+bits in the significand field is set, so that its value is 0, the
+double's value is Inf (infinity) or -Inf, depending on the sign
+bit.  If the double's exponent field is 2047 and its significand
+is not equal to 0, the value is NaN (not a number).
+
+     The real's format permits an absolute range of approximately
+2.9e-39 to 1.7e38 (decimal) and a precision of 11-12 significant
+decimal digits.  The double's wider format offers an absolute
+range of approximately 5.0e-324 to 1.7e308 and a precision of 15-
+16 significant digits.  (The tiniest values represented by
+doubles sacrifice precision for their very low magnitude.)
+
+
+Conversion Functions
+
+     Conversion between a real and a double mainly involves
+transferring the bit fields from the source to the target. 
+Because there is no high-level access to the bits in a double,
+and C has no real type, both double and real must be treated as
+arrays, the elements of which can be manipulated individually at
+the bit level.  Instead of treating doubles and reals as arrays
+of bytes, it is more efficient to treat them as arrays of 16-bit
+unsigned ints.  A typedef statement in BPREAL.C declares the
+"real" type as an array of 3 unsigned ints, and a "doublearray"
+union so that doubles can be handled as arrays of 4 unsigned
+ints.
+
+     The bits contained in each of the arrays' elements are
+listed below.  For each element, its contents are listed from
+left to right (most significant bit to least significant), and
+bit 1 of each field is the field's most significant bit:
+
+          real[2]        Sign 1, Significand 1-15
+          real[1]        Significand 16-31
+          real[0]        Significand 32-39, Exponent 1-8
+
+     doublearray.a[3]    Sign 1, Exponent 1-11, Significand 1-4
+     doublearray.a[2]    Significand 5-20
+     doublearray.a[1]    Significand 21-36
+     doublearray.a[0]    Significand 37-52
+
+     Conversion from real to double is straightforward, because
+any value that can be represented by a real can be represented by
+a double.  The real_to_double function first checks whether the
+exponent is 0.  If so, it returns the double 0.0.  Otherwise, it
+adds 894 to the exponent because the double's exponent bias
+(1023) is 894 greater than the real's bias (129), and it places
+the exponent in the correct location in the double (element 3,
+shifted 4 bits to the left).  It then moves the sign bit and the
+39-bit significand to their proper locations.
+
+     Conversion from double to real is trickier, because the IEEE
+type has greater range and precision and more special cases than
+the real.  Since error-free conversion is not assured, the
+double_to_real function returns an error code of an enumerated
+type called prconverr (for Pascal Real Conversion Error).  The
+error codes range in increasing seriousness from prOK, which
+means no error, to prNaN, which means that the double value was
+NaN (not a number), which cannot be represented by a real.
+
+     The double_to_real function first checks whether the double
+value is 0.0 or -0.0, either of which is converted to a real
+representation of 0.0 before returning prOK.
+
+     Next, the function checks whether all the bits in the
+double's exponent are set.  If they are, the double's value is
+either Inf or NaN (or one of their negations).  If the value is
+Inf, the real's exponent and significand fields are filled so as
+to represent the largest value possible, the sign bit is
+transferred, and the code prInf is returned.  If the value is
+NaN, a real value of 0.0 and a code of prNaN are returned.
+
+     After these tests, the significand is rounded.  The real's
+39-bit significand does not allow as much precision as the
+double's 52-bit significand.  To keep as much precision as
+possible, the 40th bit of the double's significand is tested.  If
+the 40th bit is set, the significand's 39th bit is incremented. 
+If all of the first 40 bits of the double's significand are set,
+bits 1 to 39 are cleared and the exponent is incremented.  The
+exponent field is guaranteed not to be filled, so incrementing
+the exponent will succeed, because the function has already
+tested the exponent for its maximum value in checking whether the
+double's value was Inf or NaN.
+
+     After rounding, the function places the value of the
+double's exponent in a variable and checks whether it fits within
+the range of valid real exponents.  Real exponents range from 1
+to 255 biased, or -128 to 126.  To fit in this range, the
+double's biased exponent must range from 895 to 1149.  If the
+double's exponent is less then 895, a real value of 0.0 and a
+code of prPosUnderflow or prNegUnderflow (depending on the
+double's sign) are returned.  If the double's exponent is greater
+than 1149, the real is set to its maximum value, the double's
+sign bit is transferred to the real, and a code of prOverflow is
+returned.
+
+     After these checks, the function is assured of a valid
+conversion.  The exponent is re-biased for the real range, and it
+is transferred to the real along with the sign bit and the first
+39 bits of the double's significand (which may have been
+rounded).  A code of prOK is then returned.
+
+
+BPRTEST Demonstration Program
+
+     BPRTEST.C is a demonstration program that prompts the user
+for 6 values of type double, displaying each one, converting it
+to a real, displaying the conversion result code, and writing the
+real value to a file called BPREALS.DAT.  The program then reads
+the real values from the file, converting each real value to a
+double and displaying it.  Comparison of the original values with
+the values read from the file will show how double values are
+changed when they are converted to reals (real values never
+change when converted to doubles).
+
+
+Reference
+
+     The information herein is derived from the Borland Pascal
+with Objects 7.0 Language Guide, Borland International 1992.
+
+
+Use and Distribution
+
+     You may freely use and distribute BPREAL.C, BPRTEST.C, and
+BPREAL.DOC, but any distribution should include all 3 files
+together and intact.  Send questions or comments to the author,
+Richard Biffl, at 1024 N. Utah St. #618, Arlington, Virginia
+22201, or on CompuServe at 73607,3043.
