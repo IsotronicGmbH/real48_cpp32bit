@@ -2,12 +2,13 @@
 /* Borland Pascal Real-Type Conversions */
 /*           by Richard Biffl           */
 
+#include <stdint.h>
 
-typedef unsigned real[3];
+typedef uint16_t real[3];
 
 union doublearray {
     double d;
-    unsigned a[4];
+    uint16_t a[4];
 };
 
 enum prconverr {
@@ -29,7 +30,7 @@ double real_to_double (real r)
 /* takes Pascal real, return C double */
 {
     union doublearray da;
-    unsigned x;
+    uint16_t x;
 
     x = r[0] & 0x00FF;  /* Real biased exponent in x */
     /* when exponent is 0, value is 0.0 */
@@ -53,7 +54,7 @@ enum prconverr double_to_real (double d, real *r)
 /* converts C double to Pascal real, returns error code */
 {
     union doublearray da;
-    unsigned x;
+    uint16_t x;
 
     da.d = d;
 
